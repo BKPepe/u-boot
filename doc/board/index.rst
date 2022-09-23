@@ -18,6 +18,7 @@ Board-specific doc
    bsh/index
    congatec/index
    coreboot/index
+   CZ.NIC/index
    emulation/index
    google/index
    highbank/index
