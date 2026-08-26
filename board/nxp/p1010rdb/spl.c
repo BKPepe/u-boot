@@ -15,6 +15,8 @@
 #include <i2c.h>
 #include <fsl_esdhc.h>
 #include <spi_flash.h>
+#include <asm/fsl_law.h>
+#include <asm/mmu.h>
 #include <asm/global_data.h>
 #include "../common/spl.h"
 
@@ -70,8 +72,12 @@ void board_init_r(gd_t *gd, ulong dest_addr)
 	bd = (struct bd_info *)(CONFIG_VAL(GD_ADDR) + sizeof(gd_t));
 	memset(bd, 0, sizeof(struct bd_info));
 	gd->bd = bd;
+	/* console_init_f() ran before the switch, restore its flag */
+	gd->flags |= GD_FLG_HAVE_CONSOLE;
 
 	arch_cpu_init();
+	init_laws();
+	init_used_tlb_cams();
 	get_clocks();
 	mem_malloc_init(CONFIG_VAL(RELOC_MALLOC_ADDR),
 			CONFIG_VAL(RELOC_MALLOC_SIZE));
