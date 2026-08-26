@@ -1742,6 +1742,8 @@ in_ram:
 	addi	r3,r3,-4
 	beq	4f
 3:	lwzu	r4,4(r3)
+	cmpwi	r4,0
+	beq-	5f
 	lwzux	r0,r4,r11
 	cmpwi	r0,0
 	add	r0,r0,r11
