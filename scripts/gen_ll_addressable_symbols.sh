@@ -5,12 +5,16 @@
 # Generate __ADDRESSABLE(symbol) for every linker list entry symbol, so that LTO
 # does not optimize these symbols away
 
-# The expected parameter of this script is the command requested to have
-# the U-Boot symbols to parse, for example: $(NM) $(u-boot-main)
+# The first parameter of this script is the nm binary to use, the rest
+# are the objects to parse, for example: $(NM) $(u-boot-main)
 
 set -e
 
+nm="$1"
+shift
+
 echo '#include <linux/compiler.h>'
-$@ 2>/dev/null | grep -oe '_u_boot_list_2_[a-zA-Z0-9_]*_2_[a-zA-Z0-9_]*' \
+"$nm" --defined-only "$@" 2>/dev/null | \
+	grep -oe '_u_boot_list_2_[a-zA-Z0-9_]*_2_[a-zA-Z0-9_]*' \
 	-e '__stack_chk_guard' | sort -u | \
 	sed -e 's/^\(.*\)/extern char \1[];\n__ADDRESSABLE(\1);/'
