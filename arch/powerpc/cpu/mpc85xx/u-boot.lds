@@ -107,6 +107,10 @@ SECTIONS
 #endif
 #endif
 
+  /DISCARD/ : {
+    *(.discard*)
+  }
+
   __bss_start = .;
   .bss (NOLOAD)       :
   {

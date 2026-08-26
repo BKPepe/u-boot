@@ -63,6 +63,10 @@ SECTIONS
 	__init_end = .;
 	_end = .;
 
+	/DISCARD/ : {
+		*(.discard*)
+	}
+
 #if CONFIG_IS_ENABLED(SYS_MPC85XX_NO_RESETVEC)
 #if defined(CONFIG_SDCARD) && !defined(CFG_SYS_MMC_U_BOOT_OFFS)
 	mmc_u_boot_offs = .;
