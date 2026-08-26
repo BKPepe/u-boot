@@ -308,6 +308,21 @@ void p1_p2_rdb_pc_fix_fdt_model(void *blob)
 					    sizeof("Turris 1.") - 1, &c, 1);
 }
 
+/*
+ * fdt_fixup_ethernet() takes the addresses from the ethaddr variables and
+ * does nothing when they are unset. They are not part of the default
+ * environment here, misc_init_r() reads them from the ATSHA204A into the
+ * environment, so a stored environment without them or an "env default"
+ * leaves the kernel with the all-zero placeholders from the device tree
+ * and Linux picks a random MAC address. Read the OTP again and redo the
+ * fixup so that this does not depend on the environment.
+ */
+void p1_p2_rdb_pc_fix_fdt_ethernet(void *blob)
+{
+	turris_atsha_otp_init_mac_addresses(0);
+	fdt_fixup_ethernet(blob);
+}
+
 int misc_init_r(void)
 {
 	turris_atsha_otp_init_mac_addresses(0);
