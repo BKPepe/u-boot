@@ -49,7 +49,7 @@ SECTIONS
     KEEP(*(.got2))
     KEEP(*(.got))
     _FIXUP_TABLE_ = .;
-    KEEP(*(.fixup))
+    KEEP(*(EXCLUDE_FILE(*keep-syms-lto.o) .fixup))
   }
   __got2_entries = ((_GLOBAL_OFFSET_TABLE_ - _GOT2_TABLE_) >> 2) - 1;
   __fixup_entries = (. - _FIXUP_TABLE_) >> 2;
@@ -106,6 +106,15 @@ SECTIONS
   . |= 0x10;
 #endif
 #endif
+
+  /*
+   * .discard.addressable of keep-syms-lto.o only keeps the linker lists
+   * alive during an LTO link. Drop it, and its fixups with it.
+   */
+  /DISCARD/ : {
+    *(.discard*)
+    *keep-syms-lto.o(.fixup)
+  }
 
   __bss_start = .;
   .bss (NOLOAD)       :
