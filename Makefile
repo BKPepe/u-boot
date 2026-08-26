@@ -1158,7 +1158,16 @@ KBUILD_CFLAGS += --coverage
 PLATFORM_LIBGCC += -lgcov
 endif
 
+# The LTO link force-links everything inside --whole-archive. The in-tree
+# libgcc needs that, its assembly helpers are only referenced by code the
+# LTO plugin generates after all symbols have been read. A toolchain
+# libgcc must not get it, force-linking every member of it pulls in the
+# split-stack and hosted pieces, which then fail to resolve.
+LTO_LIBS_WHOLE := $(if $(CONFIG_USE_PRIVATE_LIBGCC),$(PLATFORM_LIBS))
+LTO_LIBS_AFTER := $(if $(CONFIG_USE_PRIVATE_LIBGCC),,$(PLATFORM_LIBS))
+
 export PLATFORM_LIBS
+export LTO_LIBS_WHOLE LTO_LIBS_AFTER
 export PLATFORM_LIBGCC
 
 # Special flags for CPP when processing the linker script.
@@ -2096,8 +2105,9 @@ quiet_cmd_u-boot__ ?= LTO     $@
 		-Wl,--whole-archive						\
 			$(u-boot-main)						\
 			$(u-boot-keep-syms-lto)					\
-			$(PLATFORM_LIBS)					\
+			$(LTO_LIBS_WHOLE)					\
 		-Wl,--no-whole-archive						\
+		$(LTO_LIBS_AFTER) -static					\
 		-Wl,-Map,u-boot.map;						\
 		$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
 else
