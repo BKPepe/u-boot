@@ -93,7 +93,28 @@ struct arch_global_data {
 
 #include <asm-generic/global_data.h>
 
+#if defined(__clang__) || defined(LTO_ENABLE)
+
+#define DECLARE_GLOBAL_DATA_PTR
+#define gd	get_gd()
+
+static inline gd_t *get_gd(void)
+{
+	gd_t *gd_ptr;
+
+	__asm__ volatile("mr %0, 2\n" : "=r" (gd_ptr));
+
+	return gd_ptr;
+}
+
+#else
 #define DECLARE_GLOBAL_DATA_PTR     register gd_t *gd asm ("r2")
+#endif
+
+static inline void set_gd(gd_t *gd_ptr)
+{
+	__asm__ volatile("mr 2, %0\n" : : "r" (gd_ptr));
+}
 
 #include <asm/u-boot.h>
 
