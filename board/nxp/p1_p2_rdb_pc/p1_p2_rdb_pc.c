@@ -373,6 +373,8 @@ int board_early_init_r(void)
 
 __weak void p1_p2_rdb_pc_fix_fdt_model(void *blob) {}
 
+__weak void p1_p2_rdb_pc_fix_fdt_ethernet(void *blob) {}
+
 #if defined(CONFIG_OF_BOARD_SETUP) || defined(CONFIG_OF_BOARD_FIXUP)
 static void fix_max6370_watchdog(void *blob)
 {
@@ -418,6 +420,7 @@ int ft_board_setup(void *blob, struct bd_info *bd)
 
 	p1_p2_rdb_pc_fix_fdt_model(blob);
 	fix_max6370_watchdog(blob);
+	p1_p2_rdb_pc_fix_fdt_ethernet(blob);
 
 #if defined(CONFIG_HAS_FSL_DR_USB)
 	fsl_fdt_fixup_dr_usb(blob, bd);
