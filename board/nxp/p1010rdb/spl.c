@@ -62,10 +62,10 @@ void board_init_f(ulong bootflag)
 	relocate_code(CONFIG_VAL(RELOC_STACK), 0, CONFIG_SPL_RELOC_TEXT_BASE);
 }
 
-void board_init_r(gd_t *gd, ulong dest_addr)
+void board_init_r(gd_t *dummy, ulong dest_addr)
 {
 	/* Pointer is writable since we allocated a register for it */
-	gd = (gd_t *)CONFIG_VAL(GD_ADDR);
+	set_gd((gd_t *)CONFIG_VAL(GD_ADDR));
 	struct bd_info *bd;
 
 	memset(gd, 0, sizeof(gd_t));
