@@ -323,7 +323,7 @@
 #define CFG_EXTRA_ENV_SETTINGS \
 	"fdt_addr_r=0x2000000\0" \
 	"kernel_addr_r=0x2100000\0" \
-	"scriptaddr=0x3000000\0" \
+	"scriptaddr=0x1f00000\0" \
 	"pxefile_addr_r=0x3100000\0" \
 	"ramdisk_addr_r=0x4000000\0" \
 	"fdtfile=" CONFIG_DEFAULT_DEVICE_TREE ".dtb\0" \
