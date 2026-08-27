@@ -155,6 +155,7 @@ config PPC
 	select SUPPORT_OF_CONTROL
 	select SYS_BOOT_GET_CMDLINE
 	select SYS_BOOT_GET_KBD
+	select ARCH_SUPPORTS_LTO if MPC85xx
 
 config RISCV
 	bool "RISC-V architecture"
