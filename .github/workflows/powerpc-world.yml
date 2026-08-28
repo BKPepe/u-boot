@@ -1,0 +1,52 @@
+# Local testing helper, not for submission upstream.
+#
+# doc/develop/ci_testing.rst allows trimming the CI down to the jobs you care
+# about for your own testing cycle, as long as it is not sent with the patches.
+# U-Boot ships no GitHub Actions, so this file only ever lives on this fork's
+# master and never on a series branch.
+#
+# It runs the same world build the Azure pipeline runs for the powerpc slice:
+# the same container image, the same buildman invocation.
+name: powerpc world build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to build'
+        required: true
+        default: 'turris-fixes'
+
+jobs:
+  build_powerpc:
+    name: 'buildman powerpc'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Build every powerpc board
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          pip install -r tools/binman/requirements.txt \
+            -r tools/buildman/requirements.txt \
+            -r board/qualcomm/requirements.txt \
+            setuptools
+          ret=0
+          tools/buildman/buildman -o /tmp -PEWM powerpc || ret=$?
+          if [ $ret -ne 0 ]; then
+              echo "::group::buildman summary"
+              tools/buildman/buildman -o /tmp -seP powerpc || true
+              echo "::endgroup::"
+              exit $ret
+          fi
+          tools/buildman/buildman -o /tmp -sP powerpc || true
