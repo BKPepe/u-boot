@@ -37,10 +37,16 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           python3 -m venv /tmp/venv
           . /tmp/venv/bin/activate
-          pip install -r tools/binman/requirements.txt \
-            -r tools/buildman/requirements.txt \
-            -r board/qualcomm/requirements.txt \
-            setuptools
+          # board/qualcomm/requirements.txt only exists from the next
+          # branch onwards, so take whatever this ref actually has.
+          reqs=""
+          for f in tools/binman/requirements.txt \
+                   tools/buildman/requirements.txt \
+                   board/qualcomm/requirements.txt; do
+              if [ -f "$f" ]; then reqs="$reqs -r $f"; fi
+          done
+          echo "installing:$reqs"
+          pip install $reqs setuptools
           ret=0
           tools/buildman/buildman -o /tmp -PEWM powerpc || ret=$?
           if [ $ret -ne 0 ]; then
