@@ -47,6 +47,20 @@ jobs:
           done
           echo "installing:$reqs"
           pip install $reqs setuptools
+          # tools/docker/Dockerfile writes ~/.buildman as the "uboot" user,
+          # so it lands in /home/uboot. GitHub runs container steps with
+          # HOME=/github/home, where buildman would not find it and reports
+          # "No tool chain found for arch 'powerpc'".
+          if [ ! -f "$HOME/.buildman" ]; then
+              if [ -f /home/uboot/.buildman ]; then
+                  cp /home/uboot/.buildman "$HOME/.buildman"
+              else
+                  printf '[toolchain]\nkernelorg = /opt/gcc-*-nolibc/*\nroot = /usr\n' > "$HOME/.buildman"
+              fi
+          fi
+          echo "--- buildman config ---"
+          cat "$HOME/.buildman"
+          echo "-----------------------"
           ret=0
           tools/buildman/buildman -o /tmp -PEWM powerpc || ret=$?
           if [ $ret -ne 0 ]; then
