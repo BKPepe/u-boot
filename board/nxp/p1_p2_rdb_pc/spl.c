@@ -37,6 +37,10 @@ void board_init_f(ulong bootflag)
 	 */
 	board_early_init_f();
 
+	/* Move the global data to its final address, as the T-series SPLs do */
+	memcpy((void *)CONFIG_VAL(GD_ADDR), (void *)gd, sizeof(gd_t));
+	gd = (gd_t *)CONFIG_VAL(GD_ADDR);
+
 	console_init_f();
 
 	/* Set pmuxcr to allow both i2c1 and i2c2 */
@@ -69,16 +73,14 @@ void board_init_f(ulong bootflag)
 	/* NOTE - code has to be copied out of NAND buffer before
 	 * other blocks can be read.
 	 */
-	relocate_code(CONFIG_VAL(RELOC_STACK), 0, CONFIG_SPL_RELOC_TEXT_BASE);
+	relocate_code(CONFIG_VAL(RELOC_STACK), (gd_t *)CONFIG_VAL(GD_ADDR),
+		      CONFIG_SPL_RELOC_TEXT_BASE);
 }
 
-void board_init_r(gd_t *gd, ulong dest_addr)
+void board_init_r(gd_t *dummy, ulong dest_addr)
 {
-	/* Pointer is writable since we allocated a register for it */
-	gd = (gd_t *)CONFIG_VAL(GD_ADDR);
 	struct bd_info *bd;
 
-	memset(gd, 0, sizeof(gd_t));
 	bd = (struct bd_info *)(CONFIG_VAL(GD_ADDR) + sizeof(gd_t));
 	memset(bd, 0, sizeof(struct bd_info));
 	gd->bd = bd;
