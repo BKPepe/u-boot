@@ -18,6 +18,7 @@ endif
 endif
 
 obj-y	+= bdinfo.o
+obj-y	+= gd.o
 
 ifdef MINIMAL
 obj-y += cache.o time.o
