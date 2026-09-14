@@ -73,7 +73,7 @@ void board_init_f(ulong bootflag)
 	memcpy((void *)CONFIG_SPL_GD_ADDR, (void *)gd, sizeof(gd_t));
 
 	/* Update GD pointer */
-	gd = (gd_t *)(CONFIG_SPL_GD_ADDR);
+	set_gd((gd_t *)(CONFIG_SPL_GD_ADDR));
 
 	console_init_f();
 
@@ -96,7 +96,7 @@ void board_init_f(ulong bootflag)
 	relocate_code(CONFIG_SPL_RELOC_STACK, (gd_t *)CONFIG_SPL_GD_ADDR, 0x0);
 }
 
-void board_init_r(gd_t *gd, ulong dest_addr)
+void board_init_r(gd_t *dummy, ulong dest_addr)
 {
 	struct bd_info *bd;
 

@@ -956,7 +956,9 @@ ulong spl_relocate_stack_gd(void)
 #if CONFIG_IS_ENABLED(LOG)
 	log_fixup_for_gd_move(new_gd);
 #endif
-#if !defined(CONFIG_ARM) && !defined(CONFIG_RISCV)
+#if defined(CONFIG_PPC)
+	set_gd(new_gd);
+#elif !defined(CONFIG_ARM) && !defined(CONFIG_RISCV)
 	gd = new_gd;
 #endif
 	return ptr;

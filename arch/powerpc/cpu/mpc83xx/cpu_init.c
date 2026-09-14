@@ -139,8 +139,7 @@ void cpu_init_f (volatile immap_t * im)
 #endif
 		0;
 
-	/* Pointer is writable since we allocated a register for it */
-	gd = (gd_t *)SYS_INIT_SP_ADDR;
+	set_gd((gd_t *)SYS_INIT_SP_ADDR);
 
 	/* global data region was cleared in start.S */
 
