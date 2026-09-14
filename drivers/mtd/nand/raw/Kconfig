@@ -241,6 +241,7 @@ config NAND_FSL_ELBC
 config NAND_FSL_ELBC_DT
 	bool "Support Freescale Enhanced Local Bus Controller FCM NAND driver (DT mode)"
 	depends on NAND_FSL_ELBC
+	select NAND_ECC_BCH
 
 config NAND_FSL_IFC
 	bool "Support Freescale Integrated Flash Controller NAND driver"
@@ -260,6 +261,7 @@ config NAND_KIRKWOOD
 
 config NAND_ECC_BCH
 	bool
+	select BCH
 
 config NAND_KMETER1
 	bool "Support KMETER1 NAND controller"
