@@ -527,7 +527,7 @@ quiet_cmd_u-boot-spl ?= LTO     $@
 			$(patsubst $(obj)/%,%,$(u-boot-spl-keep-syms-lto))	\
 			$(LTO_LIBS_WHOLE)					\
 		-Wl,--no-whole-archive						\
-		$(LTO_LIBS_AFTER)					\
+		$(LTO_LIBS_AFTER) -static				\
 		-Wl,-Map,$(SPL_BIN).map -o $(SPL_BIN)				\
 	)
 else

@@ -2105,7 +2105,7 @@ quiet_cmd_u-boot__ ?= LTO     $@
 			$(u-boot-keep-syms-lto)					\
 			$(LTO_LIBS_WHOLE)					\
 		-Wl,--no-whole-archive						\
-		$(LTO_LIBS_AFTER)					\
+		$(LTO_LIBS_AFTER) -static				\
 		-Wl,-Map,u-boot.map;						\
 		$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
 else
