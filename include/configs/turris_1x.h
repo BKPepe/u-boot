@@ -71,6 +71,18 @@
  *         define CONFIG_SPL_MAX_SIZE = CONFIG_SYS_L2_SIZE
  */
 
+#ifdef CONFIG_NVME
+#define BOOT_TARGET_NVME(func) func(NVME, nvme, 0)
+#else
+#define BOOT_TARGET_NVME(func)
+#endif
+
+#ifdef CONFIG_SCSI
+#define BOOT_TARGET_SCSI(func) func(SCSI, scsi, 0)
+#else
+#define BOOT_TARGET_SCSI(func)
+#endif
+
 #ifdef CONFIG_SDCARD
 #define CFG_SYS_MMC_U_BOOT_SIZE	CONFIG_BOARD_SIZE_LIMIT
 #define CFG_SYS_MMC_U_BOOT_DST	CONFIG_TEXT_BASE
@@ -266,8 +278,8 @@
 #ifdef CONFIG_SDCARD
 #define BOOT_TARGET_DEVICES(func) \
 	func(MMC, mmc, 0) \
-	func(NVME, nvme, 0) \
-	func(SCSI, scsi, 0) \
+	BOOT_TARGET_NVME(func) \
+	BOOT_TARGET_SCSI(func) \
 	func(USB, usb, 0) \
 	func(USB, usb, 1) \
 	func(USB, usb, 2) \
@@ -279,8 +291,8 @@
 #else
 #define BOOT_TARGET_DEVICES(func) \
 	func(MMC, mmc, 0) \
-	func(NVME, nvme, 0) \
-	func(SCSI, scsi, 0) \
+	BOOT_TARGET_NVME(func) \
+	BOOT_TARGET_SCSI(func) \
 	func(USB, usb, 0) \
 	func(USB, usb, 1) \
 	func(USB, usb, 2) \
