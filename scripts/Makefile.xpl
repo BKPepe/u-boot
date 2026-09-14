@@ -144,6 +144,11 @@ libs-y := $(patsubst %/, %/built-in.a, $(libs-y))
 ifeq ($(CONFIG_USE_PRIVATE_LIBGCC),y)
 PLATFORM_LIBGCC = arch/$(ARCH)/lib/lib.a
 PLATFORM_LIBS := $(filter-out %/lib.a, $(filter-out -lgcc, $(PLATFORM_LIBS))) $(PLATFORM_LIBGCC)
+LTO_LIBS_WHOLE := $(PLATFORM_LIBS)
+LTO_LIBS_AFTER :=
+else
+LTO_LIBS_WHOLE :=
+LTO_LIBS_AFTER := $(PLATFORM_LIBS)
 endif
 
 u-boot-spl-init := $(head-y)
@@ -520,8 +525,9 @@ quiet_cmd_u-boot-spl ?= LTO     $@
 			$(patsubst $(obj)/%,%,$(u-boot-spl-main))		\
 			$(patsubst $(obj)/%,%,$(u-boot-spl-platdata))		\
 			$(patsubst $(obj)/%,%,$(u-boot-spl-keep-syms-lto))	\
-			$(PLATFORM_LIBS)					\
+			$(LTO_LIBS_WHOLE)					\
 		-Wl,--no-whole-archive						\
+		$(LTO_LIBS_AFTER)					\
 		-Wl,-Map,$(SPL_BIN).map -o $(SPL_BIN)				\
 	)
 else
