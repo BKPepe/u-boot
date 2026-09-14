@@ -60,22 +60,17 @@ void board_init_f(ulong bootflag)
 	relocate_code(CONFIG_VAL(RELOC_STACK), 0, CONFIG_SPL_RELOC_TEXT_BASE);
 }
 
-void board_init_r(gd_t *gd, ulong dest_addr)
+void board_init_r(gd_t *dummy, ulong dest_addr)
 {
-	/* Pointer is writable since we allocated a register for it */
-	gd = (gd_t *)CONFIG_VAL(GD_ADDR);
 	struct bd_info *bd;
 
-	memset(gd, 0, sizeof(gd_t));
 	bd = (struct bd_info *)(CONFIG_VAL(GD_ADDR) + sizeof(gd_t));
 	memset(bd, 0, sizeof(struct bd_info));
-	gd->bd = bd;
 
 	arch_cpu_init();
 	get_clocks();
 	mem_malloc_init(CONFIG_VAL(RELOC_MALLOC_ADDR),
 			CONFIG_VAL(RELOC_MALLOC_SIZE));
-	gd->flags |= GD_FLG_FULL_MALLOC_INIT;
 
 #ifndef CONFIG_SPL_NAND_BOOT
 	env_init();
@@ -88,8 +83,6 @@ void board_init_r(gd_t *gd, ulong dest_addr)
 #ifdef CONFIG_SPL_NAND_BOOT
 	nand_spl_load_image(CONFIG_ENV_OFFSET, CONFIG_ENV_SIZE,
 			    (uchar *)SPL_ENV_ADDR);
-			    gd->env_addr  = (ulong)(SPL_ENV_ADDR);
-	gd->env_valid = ENV_VALID;
 #else
 	env_relocate();
 #endif
