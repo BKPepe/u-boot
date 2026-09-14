@@ -39,7 +39,7 @@ void board_init_f(ulong bootflag)
 
 	/* Move the global data to its final address, as the T-series SPLs do */
 	memcpy((void *)CONFIG_VAL(GD_ADDR), (void *)gd, sizeof(gd_t));
-	gd = (gd_t *)CONFIG_VAL(GD_ADDR);
+	set_gd((gd_t *)CONFIG_VAL(GD_ADDR));
 
 	console_init_f();
 

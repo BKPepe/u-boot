@@ -93,7 +93,36 @@ struct arch_global_data {
 
 #include <asm-generic/global_data.h>
 
+#ifdef LTO_ENABLE
+
+#define DECLARE_GLOBAL_DATA_PTR
+#define gd	get_gd()
+
+static inline gd_t *get_gd(void)
+{
+	gd_t *gd_ptr;
+
+	__asm__ volatile("mr %0, 2\n" : "=r" (gd_ptr));
+
+	return gd_ptr;
+}
+
+static inline void set_gd(gd_t *gd_ptr)
+{
+	__asm__ volatile("mr 2, %0\n" : : "r" (gd_ptr));
+}
+
+#else
+
 #define DECLARE_GLOBAL_DATA_PTR     register gd_t *gd asm ("r2")
+
+/*
+ * GCC does not see an asm statement write r2 and keeps using the old
+ * value of the register variable, so assign the variable itself.
+ */
+#define set_gd(gd_ptr)	(gd = (gd_ptr))
+
+#endif
 
 #include <asm/u-boot.h>
 
