@@ -315,6 +315,26 @@ int misc_init_r(void)
 	return 0;
 }
 
+/*
+ * The generic fixups copy the MAC addresses and the serial number from the
+ * environment into the kernel device tree. misc_init_r() puts them there, but
+ * if the environment is reset before booting, e.g. by "env default -a", they
+ * are gone. Read them from the OTP again and repeat these fixups. Valid MAC
+ * addresses and a 16-character serial# set in the environment are kept.
+ */
+void p1_p2_rdb_pc_fix_fdt_env(void *blob)
+{
+	int ret;
+
+	ret = turris_atsha_otp_init_mac_addresses(0);
+	if (ret)
+		printf("Cannot read MAC addresses from OTP: %d\n", ret);
+	turris_atsha_otp_init_serial_number();
+
+	fdt_fixup_ethernet(blob);
+	fdt_root(blob);
+}
+
 /* This comes from ../../nxp/p1_p2_rdb_pc/p1_p2_rdb_pc.c */
 extern int checkboard_p1_p2(void);
 
