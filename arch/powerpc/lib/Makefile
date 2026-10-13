@@ -6,7 +6,8 @@
 ## Build a couple of necessary functions into a private libgcc
 ## if the user asked for it
 lib-$(CONFIG_USE_PRIVATE_LIBGCC) += _ashldi3.o _ashrdi3.o _lshrdi3.o \
-				    crtsavres.o
+				    crtsavres.o udivdi3.o
+CFLAGS_REMOVE_udivdi3.o := $(LTO_CFLAGS)
 
 MINIMAL=
 
