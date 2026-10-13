@@ -3,10 +3,14 @@
 # (C) Copyright 2000-2010
 # Wolfgang Denk, DENX Software Engineering, wd@denx.de.
 
+# Keep --gc-sections with LTO: it drops the .eh_frame sections, which the
+# linker scripts do not place.
 LDFLAGS_FINAL += --gc-sections
 LDFLAGS_FINAL += --bss-plt
-PLATFORM_RELFLAGS += -fpic -mrelocatable -ffunction-sections \
--fdata-sections -mcall-linux
+PLATFORM_RELFLAGS += -fpic -mrelocatable -mcall-linux
+ifneq ($(LTO_ENABLE),y)
+PLATFORM_RELFLAGS += -ffunction-sections -fdata-sections
+endif
 
 PF_CPPFLAGS_POWERPC	:= $(call cc-option,-fno-ira-hoist-pressure,) $(call cc-option,-Xassembler --fatal-warnings,)
 PLATFORM_CPPFLAGS += -D__powerpc__ -ffixed-r2 -m32 $(PF_CPPFLAGS_POWERPC)
