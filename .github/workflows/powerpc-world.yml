@@ -16,6 +16,10 @@ on:
         description: 'Branch or commit to build'
         required: true
         default: 'turris-fixes'
+      select:
+        description: 'buildman board selection (arch or board names)'
+        required: true
+        default: 'powerpc'
 
 jobs:
   build_powerpc:
@@ -62,11 +66,11 @@ jobs:
           cat "$HOME/.buildman"
           echo "-----------------------"
           ret=0
-          tools/buildman/buildman -o /tmp -PEWM powerpc || ret=$?
+          tools/buildman/buildman -o /tmp -PEWM ${{ inputs.select }} || ret=$?
           if [ $ret -ne 0 ]; then
               echo "::group::buildman summary"
-              tools/buildman/buildman -o /tmp -seP powerpc || true
+              tools/buildman/buildman -o /tmp -seP ${{ inputs.select }} || true
               echo "::endgroup::"
               exit $ret
           fi
-          tools/buildman/buildman -o /tmp -sP powerpc || true
+          tools/buildman/buildman -o /tmp -sP ${{ inputs.select }} || true
