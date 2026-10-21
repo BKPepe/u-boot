@@ -1,0 +1,610 @@
+# Local testing helper, not for submission upstream.
+#
+# Builds a three-patch ARM LTO series at each of its commits and compares the
+# images, to back the claims in its commit messages and cover letter. Like
+# powerpc-world.yml, this file only lives on this fork's master.
+#
+# The boards are every ARM defconfig whose Kconfig ends up with LTO=y on the
+# base of the series, as kconfiglib evaluates it, plus a fixed sample of ARM
+# boards without LTO. Every variant is built over two shards.
+name: arm lto matrix
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Series branch: three patches on top of their base'
+        required: true
+        default: 'lto-arm-v2'
+
+env:
+  # ARM boards without LTO, which the series must not change: an MPU core
+  # (zynqmp_r5), TPL (rk3399, rk3288), and ARMv7 and ARMv8 with and
+  # without SPL.
+  SAMPLE: >-
+    xilinx_zynqmp_r5 evb-rk3399 firefly-rk3288 qemu_arm qemu_arm64
+    rpi_3_32b rpi_4 stm32mp15_basic sama5d27_som1_ek_mmc orangepi_pc
+    pine64_plus mx6ul_14x14_evk colibri_imx7
+
+jobs:
+  boardlist:
+    name: 'list the LTO boards'
+    runs-on: ubuntu-24.04
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    outputs:
+      boards: ${{ steps.scan.outputs.boards }}
+      sha: ${{ steps.scan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 4
+
+      - id: scan
+        name: Evaluate Kconfig for every ARM defconfig on the base
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # every later job builds this commit, even if the branch moves
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git log --oneline -4
+          git checkout --detach HEAD~3
+          mkdir -p /tmp/res
+          python3 - <<'EOF'
+          import glob, os, subprocess, sys
+          sys.path.insert(0, "tools/buildman")
+          import kconfiglib
+          srctree = os.getcwd()
+          os.environ.update(srctree=srctree, UBOOTVERSION="dummy",
+                            KCONFIG_OBJDIR="", CC="gcc")
+          kconf = kconfiglib.Kconfig("Kconfig", warn=False)
+          syms = ["ARCH_K3", "ARCH_RENESAS", "IMX8M", "AM33XX", "ARM64",
+                  "USE_PRIVATE_LIBGCC", "CPU_V7R", "SYS_ARM_MPU", "SPL",
+                  "TPL", "VPL"]
+          rows = []
+          for path in sorted(glob.glob("configs/*_defconfig")):
+              # the same preprocessing as scripts/kconfig/Makefile
+              text = subprocess.run(
+                  ["cpp", "-nostdinc", "-P", "-I", srctree, "-undef",
+                   "-x", "assembler-with-cpp", path],
+                  check=True, capture_output=True, text=True).stdout
+              text = "\n".join(l.lstrip() for l in text.splitlines()) + "\n"
+              if "CONFIG_ARM=y\n" not in text:
+                  continue
+              with open("/tmp/defconfig", "w") as f:
+                  f.write(text)
+              kconf.load_config("/tmp/defconfig")
+              if kconf.syms["ARM"].str_value != "y":
+                  continue
+              board = os.path.basename(path)[:-len("_defconfig")]
+              val = {s: kconf.syms[s].str_value or "n" for s in syms}
+              lto = kconf.syms["LTO"].str_value == "y"
+              if not lto:
+                  how = "-"
+              elif val["ARCH_K3"] == "y":
+                  how = "K3"
+              elif val["ARCH_RENESAS"] == "y":
+                  how = "Renesas"
+              elif val["IMX8M"] == "y":
+                  how = "i.MX8M"
+              elif val["AM33XX"] == "y":
+                  how = "AM33xx"
+              elif "CONFIG_LTO=y\n" in text:
+                  how = "CONFIG_LTO=y"
+              else:
+                  how = "other"
+              rows.append((board, lto, how, val))
+          with open("/tmp/res/boardlist.txt", "w") as f:
+              for board, lto, how, val in rows:
+                  f.write(" ".join([board, "LTO=" + ("y" if lto else "n"),
+                                    "how=" + how] +
+                                   ["%s=%s" % kv for kv in val.items()]) + "\n")
+          lto = [r for r in rows if r[1]]
+          def count(pred):
+              return sum(1 for r in lto if pred(r))
+          print("ARM defconfigs:", len(rows), " with LTO:", len(lto))
+          for how in ["K3", "Renesas", "i.MX8M", "AM33xx", "CONFIG_LTO=y",
+                      "other"]:
+              print("  %-13s %d" % (how, count(lambda r: r[2] == how)))
+          print("  ARM64:", count(lambda r: r[3]["ARM64"] == "y"),
+                " private libgcc:",
+                count(lambda r: r[3]["USE_PRIVATE_LIBGCC"] == "y"),
+                " CPU_V7R:", count(lambda r: r[3]["CPU_V7R"] == "y"))
+          print("  SPL:", count(lambda r: r[3]["SPL"] == "y"),
+                " TPL:", count(lambda r: r[3]["TPL"] == "y"),
+                " VPL:", count(lambda r: r[3]["VPL"] == "y"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("boards=%s\n" % " ".join(r[0] for r in lto))
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boardlist
+          path: /tmp/res/boardlist.txt
+
+  build:
+    name: 'build ${{ matrix.variant }} ${{ matrix.shard }}'
+    needs: boardlist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [base, base-again, p1, p12, v2, v2-without-p2, base-nolto,
+                  v2-nolto]
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.boardlist.outputs.sha }}
+          fetch-depth: 4
+
+      - name: Build and record the images
+        env:
+          VARIANT: ${{ matrix.variant }}
+          SHARD: ${{ matrix.shard }}
+          LTO_BOARDS: ${{ needs.boardlist.outputs.boards }}
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          top=$(git rev-parse HEAD)
+          case "$VARIANT" in
+          base|base-again|base-nolto) git checkout --detach "$top~3" ;;
+          p1) git checkout --detach "$top~2" ;;
+          p12) git checkout --detach "$top~1" ;;
+          v2|v2-nolto) git checkout --detach "$top" ;;
+          v2-without-p2)
+              git checkout --detach "$top"
+              git diff "$top~2" "$top~1" | git apply -R
+              ;;
+          *) echo "unknown variant $VARIANT"; exit 1 ;;
+          esac
+          git log --oneline -4
+          echo "changes against the series top:"
+          git diff --stat "$top"
+
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          reqs=""
+          for f in tools/binman/requirements.txt \
+                   tools/buildman/requirements.txt \
+                   board/qualcomm/requirements.txt; do
+              if [ -f "$f" ]; then reqs="$reqs -r $f"; fi
+          done
+          pip install $reqs setuptools
+          if [ ! -f "$HOME/.buildman" ]; then
+              if [ -f /home/uboot/.buildman ]; then
+                  cp /home/uboot/.buildman "$HOME/.buildman"
+              else
+                  printf '[toolchain]\nkernelorg = /opt/gcc-*-nolibc/*\nroot = /usr\n' > "$HOME/.buildman"
+              fi
+          fi
+
+          cat > /tmp/record.py <<'EOF'
+          import hashlib, json, os, re, subprocess
+          root = "/tmp/bm/current"
+          variant, shard = os.environ["VARIANT"], os.environ["SHARD"]
+          images = {"proper": "u-boot-nodtb.bin",
+                    "spl": "u-boot-spl-nodtb.bin",
+                    "tpl": "u-boot-tpl-nodtb.bin",
+                    "vpl": "u-boot-vpl-nodtb.bin"}
+          syms = ["LTO", "USE_PRIVATE_LIBGCC", "ARM64", "CPU_V7R", "SPL",
+                  "TPL", "VPL", "LOCALVERSION_AUTO"]
+          # only the dated version_string, its place in the image moves
+          dated = re.compile(rb"U-Boot \d{4}\.\d{2}[^\x00]* \([A-Z][a-z]{2} "
+                             rb"[ 0-9]\d \d{4} - \d\d:\d\d:\d\d [+-]\d{4}\)"
+                             rb"[^\x00]*")
+          if not os.path.isdir(root):
+              # the report lists this batch's boards as absent
+              print("no buildman output for this batch")
+              raise SystemExit(0)
+          out = open("/tmp/res/%s-%s.jsonl" % (variant, shard), "a")
+          for board in sorted(os.listdir(root)):
+              d = os.path.join(root, board)
+              rec = {"variant": variant, "board": board,
+                     "top": os.environ["TOP"]}
+              try:
+                  rec["done"] = open(os.path.join(d, "done")).read().strip()
+              except OSError:
+                  rec["done"] = "missing"
+              if os.path.exists(os.path.join(d, "err")):
+                  rec["err"] = open(os.path.join(d, "err"),
+                                    errors="replace").read()[-2000:]
+              for key, name in images.items():
+                  p = os.path.join(d, name)
+                  if os.path.exists(p):
+                      data = open(p, "rb").read()
+                      rec[key] = "%s:%d" % (hashlib.sha256(data).hexdigest(),
+                                            len(data))
+                      if key == "proper":
+                          rec["version"] = sorted({m.decode(errors="replace")
+                                                   for m in dated.findall(data)})
+              elf = os.path.join(d, "u-boot")
+              if os.path.exists(elf):
+                  secs = subprocess.run(["readelf", "-SW", elf],
+                                        capture_output=True, text=True).stdout
+                  rec["sections"] = sorted(set(re.findall(
+                      r"^\s*\[\s*\d+\]\s+(\S+)", secs, re.M)))
+              cfg = {}
+              try:
+                  for line in open(os.path.join(d, ".config")):
+                      m = re.match(r"CONFIG_([A-Z0-9_]+)=(.*)", line)
+                      if m and m.group(1) in syms:
+                          cfg[m.group(1)] = m.group(2)
+              except OSError:
+                  pass
+              rec["cfg"] = cfg
+              out.write(json.dumps(rec) + "\n")
+          out.close()
+          EOF
+
+          printf '%s\n' $LTO_BOARDS $SAMPLE | sort -u |
+              awk -v s="$SHARD" 'NR % 2 == s' > /tmp/shard.txt
+          echo "$(wc -l < /tmp/shard.txt) boards in this shard"
+          split -l 40 /tmp/shard.txt /tmp/batch.
+          nolto=""
+          case "$VARIANT" in *-nolto) nolto=-L ;; esac
+          # -r gives SOURCE_DATE_EPOCH=0 and drops LOCALVERSION_AUTO, and
+          # an empty LOCALVERSION keeps setlocalversion from adding '+', so
+          # the version string is the same on every commit.
+          export LOCALVERSION=
+          export TOP="$top"
+          mkdir -p /tmp/res
+          # Build in batches and drop each batch's output trees afterwards,
+          # so that the disk does not fill up.
+          for batch in /tmp/batch.*; do
+              boards=$(paste -sd, "$batch")
+              ret=0
+              tools/buildman/buildman -o /tmp/bm -PEWM -k -r $nolto \
+                  --boards "$boards" || ret=$?
+              echo "buildman returned $ret for $boards"
+              if [ $ret -ne 0 ]; then
+                  tools/buildman/buildman -o /tmp/bm -seP -r $nolto \
+                      --boards "$boards" || true
+              fi
+              python3 /tmp/record.py
+              df -h / | tail -1
+              du -sh /tmp/bm
+              rm -rf /tmp/bm
+          done
+          echo "$(wc -l < "/tmp/res/$VARIANT-$SHARD.jsonl") boards recorded"
+
+      # also after a failure or a timeout, to keep the finished batches
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: res-${{ matrix.variant }}-${{ matrix.shard }}
+          path: /tmp/res/
+
+  verbose:
+    name: 'link and compile commands'
+    needs: boardlist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.boardlist.outputs.sha }}
+          fetch-depth: 4
+
+      - name: Build a few boards and extract the flags
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          reqs=""
+          for f in tools/binman/requirements.txt \
+                   tools/buildman/requirements.txt \
+                   board/qualcomm/requirements.txt; do
+              if [ -f "$f" ]; then reqs="$reqs -r $f"; fi
+          done
+          pip install $reqs setuptools
+          if [ ! -f "$HOME/.buildman" ]; then
+              if [ -f /home/uboot/.buildman ]; then
+                  cp /home/uboot/.buildman "$HOME/.buildman"
+              else
+                  printf '[toolchain]\nkernelorg = /opt/gcc-*-nolibc/*\nroot = /usr\n' > "$HOME/.buildman"
+              fi
+          fi
+          # K3 R5 and A53, AM33xx, i.MX8M, a 32-bit and a 64-bit Renesas
+          # board, Turris Omnia, and the non-LTO MPU board
+          boards=am64x_evm_r5,am64x_evm_a53,am335x_evm,imx8mp_evk,porter,r8a779f0_spider,turris_omnia,xilinx_zynqmp_r5
+          top=$(git rev-parse HEAD)
+          mkdir -p /tmp/res
+          for variant in base v2 v2-without-p2; do
+              git checkout -f --detach "$top"
+              case "$variant" in
+              base) git checkout --detach "$top~3" ;;
+              v2-without-p2) git diff "$top~2" "$top~1" | git apply -R ;;
+              esac
+              # -m: no retry after output on stderr, which would leave an
+              # incremental rebuild in the log
+              tools/buildman/buildman -o "/tmp/bv-$variant" -PEWM -m -V \
+                  --boards "$boards" || true
+              for b in $(echo "$boards" | tr , ' '); do
+                  o="/tmp/bv-$variant/.bm-work/$b"
+                  echo "=== $variant $b (done: $(cat "/tmp/bv-$variant/current/$b/done" 2>/dev/null || echo missing))" >> /tmp/res/verbose.txt
+                  # Kbuild keeps each target's command in its .cmd file
+                  for cmd in .u-boot.cmd arch/arm/lib/.cache-cp15.o.cmd \
+                             common/.board_r.o.cmd; do
+                      line=$(grep -m1 '^cmd_' "$o/$cmd" 2>/dev/null || true)
+                      if [ -z "$line" ]; then
+                          echo "  $cmd: not built" >> /tmp/res/verbose.txt
+                          continue
+                      fi
+                      flags=""
+                      for f in -flto -ffunction-sections -fdata-sections \
+                               --gc-sections; do
+                          case " $line " in
+                          *"$f"*) flags="$flags $f" ;;
+                          esac
+                      done
+                      echo "  $cmd:${flags:- none of them}" >> /tmp/res/verbose.txt
+                      echo "$line" >> "/tmp/res/cmd-$variant-$b.txt"
+                  done
+              done
+              # images for a boot test on Turris Omnia
+              if [ "$variant" != v2-without-p2 ]; then
+                  cp "/tmp/bv-$variant/.bm-work/turris_omnia/u-boot-with-spl.kwb" \
+                      "/tmp/res/omnia-$variant-u-boot-with-spl.kwb" || true
+              fi
+          done
+          cat /tmp/res/verbose.txt
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: verbose
+          path: /tmp/res/
+
+  report:
+    name: 'compare'
+    needs: [boardlist, build, verbose]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: res
+          merge-multiple: true
+
+      - name: Compare the variants
+        env:
+          LTO_BOARDS: ${{ needs.boardlist.outputs.boards }}
+          SHA: ${{ needs.boardlist.outputs.sha }}
+        run: |
+          set -o pipefail
+          {
+              echo '```'
+              cat res/verbose.txt || echo "no verbose.txt"
+              echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 - <<'EOF' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          import collections, glob, json, os, re, sys
+
+          VARIANTS = ["base", "base-again", "p1", "p12", "v2", "v2-without-p2",
+                      "base-nolto", "v2-nolto"]
+          lto = set(os.environ["LTO_BOARDS"].split())
+          sample = set(os.environ["SAMPLE"].split())
+          expected = lto | sample
+          how = {}
+          for line in open("res/boardlist.txt"):
+              f = line.split()
+              how[f[0]] = f[2][len("how="):]
+          recs = collections.defaultdict(dict)
+          tops = set()
+          for path in glob.glob("res/*.jsonl"):
+              for line in open(path):
+                  r = json.loads(line)
+                  recs[r["variant"]][r["board"]] = r
+                  tops.add(r["top"])
+          bad = []
+
+          def ok(v, b):
+              return recs[v].get(b, {}).get("done") == "0"
+
+          def show(title, items, limit=40):
+              items = sorted(items)
+              print("%s: %d" % (title, len(items)))
+              for i in items[:limit]:
+                  print("    " + i)
+              if len(items) > limit:
+                  print("    ... and %d more" % (len(items) - limit))
+
+          print("```")
+          print("series top %s, %d LTO boards, %d sample boards" % (
+              os.environ["SHA"], len(lto), len(sample)))
+          if not lto:
+              bad.append("no LTO boards")
+          if tops != {os.environ["SHA"]}:
+              bad.append("records come from other commits: %s" % tops)
+          for v in VARIANTS:
+              for s in (0, 1):
+                  if not os.path.exists("res/%s-%d.jsonl" % (v, s)):
+                      bad.append("no results for %s shard %d" % (v, s))
+              absent = expected - set(recs[v])
+              fails = [b for b in recs[v] if not ok(v, b)]
+              print("%-14s %3d boards, %d absent, %d failed %s" % (
+                  v, len(recs[v]), len(absent), len(fails),
+                  " ".join(sorted(fails))))
+              if absent:
+                  bad.append("%s lacks %s" % (v, " ".join(sorted(absent))))
+
+          # build failures that the base does not have
+          for v in ["p1", "p12", "v2"]:
+              new = [b for b in recs[v] if not ok(v, b) and ok("base", b)]
+              if new:
+                  bad.append("%s fails on %s" % (v, " ".join(sorted(new))))
+          flaky = [b for b in expected if ok("base", b) != ok("base-again", b)]
+          if flaky:
+              bad.append("base and base-again disagree on %s" %
+                         " ".join(sorted(flaky)))
+          # upstream CI builds every one of these boards on the base
+          fails = [b for b in recs["base"] if not ok("base", b)]
+          if fails:
+              bad.append("base fails on %s" % " ".join(sorted(fails)))
+          # some boards may not fit without LTO, but both sides must agree
+          show("base-nolto fails on",
+               [b for b in recs["base-nolto"] if not ok("base-nolto", b)])
+          odd = [b for b in recs["base-nolto"]
+                 if ok("base-nolto", b) and not ok("v2-nolto", b)]
+          if odd:
+              bad.append("only v2-nolto fails on %s" % " ".join(sorted(odd)))
+          versions = collections.defaultdict(set)
+          for v in VARIANTS:
+              for b, r in recs[v].items():
+                  if r.get("cfg", {}).get("LOCALVERSION_AUTO") == "y":
+                      bad.append("LOCALVERSION_AUTO still set: %s %s" % (v, b))
+                  if ok(v, b) and "proper" in r:
+                      vs = r.get("version", [])
+                      versions[b].add(tuple(vs))
+                      if not vs:
+                          print("no dated version string in %s %s" % (v, b))
+                      elif len(vs) > 1 or "(Jan 01 1970 - 00:00:00 +0000)" \
+                              not in vs[0] or "-dirty" in vs[0] or \
+                              re.search(r"-g[0-9a-f]{7,}", vs[0]):
+                          bad.append("unexpected version string %s %s: %s" % (
+                              v, b, vs))
+          mixed = [b for b, s in versions.items() if len(s) > 1]
+          print()
+          show("boards whose version string differs between variants", mixed)
+          if mixed:
+              bad.append("version strings differ, comparisons are invalid")
+
+          KINDS = ("proper", "spl", "tpl", "vpl")
+
+          def report(title, a, b, expect_same, kinds=KINDS, boards=None):
+              boards = (set(recs[a]) | set(recs[b])) if boards is None else boards
+              same, diff = collections.Counter(), collections.defaultdict(list)
+              skipped = []
+              for board in sorted(boards):
+                  if not (ok(a, board) and ok(b, board)):
+                      skipped.append(board)
+                      continue
+                  for k in kinds:
+                      x, y = recs[a][board].get(k), recs[b][board].get(k)
+                      if x is None and y is None:
+                          continue
+                      if x == y:
+                          same[k] += 1
+                      else:
+                          diff[k].append(board)
+              print()
+              print("%s (%s vs %s), %d boards, %d skipped as failed or absent"
+                    % (title, b, a, len(boards), len(skipped)))
+              for k in kinds:
+                  print("  %-6s identical %3d, different %3d" % (
+                      k, same[k], len(diff[k])))
+                  if diff[k]:
+                      show("    different", diff[k], 20)
+              if expect_same:
+                  for k in kinds:
+                      if diff[k]:
+                          bad.append("%s: %s differs on %d boards" % (
+                              title.strip(), k, len(diff[k])))
+                  if len(skipped) == len(boards):
+                      bad.append("%s: no board built on both sides" %
+                                 title.strip())
+              return same, diff, skipped
+
+          report("control: base built twice", "base", "base-again", True)
+          report("patch 1", "base", "p1", False)
+          report("patch 2 changes no image", "p1", "p12", True)
+          report("patches 1 and 2", "base", "p12", False)
+          _, diff, _ = report("patch 3", "p12", "v2", False)
+          for k in ("spl", "tpl", "vpl"):
+              if diff[k]:
+                  bad.append("patch 3 changes %s on %s" % (
+                      k, " ".join(diff[k])))
+          changed = set(diff["proper"])
+          print("  U-Boot proper of LTO boards unchanged by patch 3, per kind:")
+          for kind in ["K3", "Renesas", "i.MX8M", "AM33xx", "CONFIG_LTO=y"]:
+              total = [b for b in lto if how.get(b) == kind]
+              members = [b for b in total if ok("p12", b) and ok("v2", b)]
+              same = sorted(b for b in members if b not in changed)
+              print("    %-13s %3d of %3d %s" % (kind, len(same), len(members),
+                                                 " ".join(same)))
+              if total and (not members or len(same) == len(members)):
+                  bad.append("patch 3 changes no %s board" % kind)
+          report("boards without LTO, whole series", "base", "v2", True,
+                 boards=sample)
+          report("NO_LTO=1, whole series", "base-nolto", "v2-nolto", True)
+
+          print()
+          print("without patch 2 (v2-without-p2 vs v2):")
+          fails = [b for b in recs["v2-without-p2"]
+                   if not ok("v2-without-p2", b) and ok("v2", b)]
+          show("  fails only without patch 2", fails)
+          priv = {b for b in lto
+                  if recs["v2"].get(b, {}).get("cfg", {})
+                  .get("USE_PRIVATE_LIBGCC") == "y"}
+          # patch 2 only changes anything with the private libgcc
+          odd = sorted(set(fails) - priv)
+          if odd:
+              bad.append("without patch 2, boards it cannot affect fail: %s"
+                         % " ".join(odd))
+          report("  boards where patch 2 cannot matter", "v2",
+                 "v2-without-p2", True, boards=expected - priv)
+          report("  SPL of the private libgcc LTO boards", "v2",
+                 "v2-without-p2", True, kinds=("spl", "tpl", "vpl"),
+                 boards=priv)
+          kept, missing, sizes = [], [], []
+          for b in sorted(priv):
+              if ok("v2", b):
+                  y = recs["v2"][b]
+                  dy = [s for s in y.get("sections", [])
+                        if s.startswith(".discard")]
+                  if dy or not y.get("sections"):
+                      bad.append("v2 keeps %s in %s" % (
+                          dy or "unknown sections", b))
+              if not (ok("v2-without-p2", b) and ok("v2", b)):
+                  continue
+              x, y = recs["v2-without-p2"][b], recs["v2"][b]
+              if ".discard.addressable" in x.get("sections", []):
+                  kept.append(b)
+              else:
+                  missing.append(b)
+              sizes.append((int(x["proper"].split(":")[1]) -
+                            int(y["proper"].split(":")[1]), b))
+          print("  private libgcc LTO boards: %d, built both ways: %d, keep"
+                " .discard.addressable without patch 2: %d" % (
+                    len(priv), len(sizes), len(kept)))
+          if priv and not sizes:
+              bad.append("no private libgcc LTO board builds both with and"
+                         " without patch 2")
+          if missing:
+              show("  do not keep it", missing)
+              bad.append("without patch 2, %d of %d boards keep no"
+                         " .discard.addressable" % (len(missing), len(sizes)))
+          if sizes:
+              sizes.sort()
+              print("  u-boot-nodtb.bin without patch 2 minus with it:"
+                    " min %d (%s), max %d (%s), larger on %d boards" % (
+                        sizes[0][0], sizes[0][1], sizes[-1][0], sizes[-1][1],
+                        sum(1 for d, _ in sizes if d > 0)))
+
+          print()
+          if bad:
+              print("FAILED:")
+              for b in bad:
+                  print("  " + b)
+          else:
+              print("all expectations hold")
+          print("```")
+          sys.exit(1 if bad else 0)
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: report
+          path: res/
