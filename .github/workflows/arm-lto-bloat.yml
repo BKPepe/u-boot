@@ -1,0 +1,77 @@
+# Local testing helper, not for submission upstream.
+#
+# Builds a few boards at every commit of a series with buildman and prints
+# its size and per-function size summary, to see where an image grows. Like
+# the other workflows, this file only lives on this fork's master.
+name: arm lto bloat
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Series branch'
+        required: true
+        default: 'lto-arm-v2'
+      count:
+        description: 'Number of commits to build, the base included'
+        required: true
+        default: '4'
+      boards:
+        description: 'Boards to build, separated by commas'
+        required: true
+        default: 'imx8mp_evk,imx8mp_data_modul_edm_sbc,am64x_evm_a53,am335x_evm'
+
+jobs:
+  bloat:
+    name: 'bloat ${{ inputs.branch }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Build every commit and print the size changes
+        env:
+          COUNT: ${{ inputs.count }}
+          BOARDS: ${{ inputs.boards }}
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git branch -f bloat HEAD
+          git log --oneline -"$COUNT" bloat
+
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          reqs=""
+          for f in tools/binman/requirements.txt \
+                   tools/buildman/requirements.txt \
+                   board/qualcomm/requirements.txt; do
+              if [ -f "$f" ]; then reqs="$reqs -r $f"; fi
+          done
+          pip install $reqs setuptools
+          if [ ! -f "$HOME/.buildman" ]; then
+              if [ -f /home/uboot/.buildman ]; then
+                  cp /home/uboot/.buildman "$HOME/.buildman"
+              else
+                  printf '[toolchain]\nkernelorg = /opt/gcc-*-nolibc/*\nroot = /usr\n' > "$HOME/.buildman"
+              fi
+          fi
+
+          mkdir -p /tmp/res
+          ret=0
+          tools/buildman/buildman -o /tmp/bm -b bloat -c "$COUNT" -PEWM -r \
+              --boards "$BOARDS" || ret=$?
+          echo "buildman returned $ret"
+          tools/buildman/buildman -o /tmp/bm -b bloat -c "$COUNT" -sSBe -r \
+              --boards "$BOARDS" 2>&1 | tee /tmp/res/bloat.txt
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: bloat
+          path: /tmp/res/
