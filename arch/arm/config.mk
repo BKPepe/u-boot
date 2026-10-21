@@ -16,8 +16,9 @@ CFLAGS_EFI := -fpic -fshort-wchar
 LDFLAGS_FINAL += --gc-sections
 
 ifneq ($(LTO_ENABLE),y)
-PLATFORM_RELFLAGS += -ffunction-sections -fdata-sections
+PLATFORM_RELFLAGS += -ffunction-sections
 endif
+PLATFORM_RELFLAGS += -fdata-sections
 
 PLATFORM_RELFLAGS += -fno-common $(FIXED_REG)
 PLATFORM_RELFLAGS += $(call cc-option, -msoft-float) \
