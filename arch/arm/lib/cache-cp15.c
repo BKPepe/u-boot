@@ -328,6 +328,7 @@ int dcache_status(void)
 void mmu_set_region_dcache_behaviour(phys_addr_t start, size_t size,
 				     enum dcache_option option)
 {
-	mmu_set_region_dcache_behaviour_phys(start, start, size, option);
+	if (IS_ENABLED(CONFIG_SYS_ARM_MMU))
+		mmu_set_region_dcache_behaviour_phys(start, start, size, option);
 }
 #endif
