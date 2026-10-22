@@ -1,0 +1,103 @@
+# Local testing helper, not for submission upstream.
+#
+# Builds a few boards at chosen commits of a branch and prints where the
+# data of U-Boot proper ends up: the section sizes, the symbols around a
+# given symbol and the matching part of u-boot.map. Like the other
+# workflows, this file only lives on this fork's master.
+name: arm lto inspect
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch'
+        required: true
+        default: 'lto-arm-v2-fdata'
+      commits:
+        description: 'Commits to build, relative to the branch, separated by spaces'
+        required: true
+        default: 'HEAD~4 HEAD~1 HEAD'
+      boards:
+        description: 'Boards to build, separated by commas'
+        required: true
+        default: 'imx8mm_evk,imx8mp_data_modul_edm_sbc'
+      symbol:
+        description: 'Symbol to look at'
+        required: true
+        default: 'early_tlb'
+
+jobs:
+  inspect:
+    name: 'inspect ${{ inputs.branch }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container:
+      image: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+      options: -u 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 10
+
+      - name: Build and inspect
+        env:
+          COMMITS: ${{ inputs.commits }}
+          BOARDS: ${{ inputs.boards }}
+          SYMBOL: ${{ inputs.symbol }}
+        run: |
+          set -e
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # resolve every commit before the first checkout moves HEAD
+          shas=""
+          for c in $COMMITS; do shas="$shas $(git rev-parse "$c")"; done
+
+          python3 -m venv /tmp/venv
+          . /tmp/venv/bin/activate
+          reqs=""
+          for f in tools/binman/requirements.txt \
+                   tools/buildman/requirements.txt \
+                   board/qualcomm/requirements.txt; do
+              if [ -f "$f" ]; then reqs="$reqs -r $f"; fi
+          done
+          pip install $reqs setuptools
+          if [ ! -f "$HOME/.buildman" ]; then
+              if [ -f /home/uboot/.buildman ]; then
+                  cp /home/uboot/.buildman "$HOME/.buildman"
+              else
+                  printf '[toolchain]\nkernelorg = /opt/gcc-*-nolibc/*\nroot = /usr\n' > "$HOME/.buildman"
+              fi
+          fi
+
+          mkdir -p /tmp/res
+          for sha in $shas; do
+              git checkout -f --detach "$sha"
+              short=$(git rev-parse --short=11 HEAD)
+              tools/buildman/buildman -o "/tmp/bm-$short" -PEWM -k -r \
+                  --boards "$BOARDS" || true
+              for b in $(echo "$BOARDS" | tr , ' '); do
+                  d="/tmp/bm-$short/current/$b"
+                  {
+                      echo "=== $(git log -1 --format='%h %s') / $b (done: $(cat "$d/done" 2>/dev/null || echo missing))"
+                      if [ -f "$d/u-boot" ]; then
+                          tc_path=$(sed -n 's/^path //p' "$d/toolchain")
+                          tc_cross=$(sed -n 's/^cross //p' "$d/toolchain")
+                          echo "--- sections"
+                          readelf -SW "$d/u-boot" | grep -E '^ +\[ *[0-9]+\]'
+                          echo "--- symbols around $SYMBOL"
+                          "$tc_path/${tc_cross}nm" -n -S "$d/u-boot" |
+                              grep -B6 -A3 -w "$SYMBOL" || echo "no $SYMBOL"
+                          echo "--- u-boot.map around $SYMBOL"
+                          grep -n -B12 -A4 -w "$SYMBOL" "$d/u-boot.map" | head -60 ||
+                              echo "no $SYMBOL in the map"
+                          cp "$d/u-boot.map" "/tmp/res/$b-$short.map"
+                      fi
+                  } 2>&1 | tee -a /tmp/res/inspect.txt
+              done
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: inspect
+          path: /tmp/res/
