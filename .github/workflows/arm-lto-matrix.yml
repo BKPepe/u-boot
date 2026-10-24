@@ -1,12 +1,13 @@
 # Local testing helper, not for submission upstream.
 #
-# Builds a four-patch ARM LTO series at each of its commits and compares the
+# Builds a five-patch ARM LTO series at each of its commits and compares the
 # images, to back the claims in its commit messages and cover letter. Like
 # powerpc-world.yml, this file only lives on this fork's master.
 #
 # The series: patch 1 fixes arch/arm/lib/cache-cp15.c, patch 2 keeps the
-# section flags with LTO on ARM64, patch 3 keeps --gc-sections with LTO and
-# patch 4 sets LTO_ENABLE before config.mk is included.
+# section flags with LTO on ARM64, patch 3 keeps them with
+# SKIP_RELOCATE_CODE, patch 4 keeps --gc-sections with LTO and patch 5 sets
+# LTO_ENABLE before config.mk is included.
 #
 # The boards are every ARM defconfig whose Kconfig ends up with LTO=y on the
 # base of the series, as kconfiglib evaluates it, plus a fixed sample of ARM
@@ -17,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Series branch: four patches on top of their base'
+        description: 'Series branch: five patches on top of their base'
         required: true
         default: 'lto-arm-v2'
 
@@ -44,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
-          fetch-depth: 5
+          fetch-depth: 6
 
       - id: scan
         name: Evaluate Kconfig for every ARM defconfig on the base
@@ -53,8 +54,8 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           # every later job builds this commit, even if the branch moves
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          git log --oneline -5
-          git checkout --detach HEAD~4
+          git log --oneline -6
+          git checkout --detach HEAD~5
           mkdir -p /tmp/res
           python3 - <<'EOF'
           import glob, os, subprocess, sys
@@ -66,7 +67,7 @@ jobs:
           kconf = kconfiglib.Kconfig("Kconfig", warn=False)
           syms = ["ARCH_K3", "ARCH_RENESAS", "IMX8M", "AM33XX", "ARM64",
                   "USE_PRIVATE_LIBGCC", "CPU_V7R", "SYS_ARM_MPU", "SPL",
-                  "TPL", "VPL"]
+                  "TPL", "VPL", "SKIP_RELOCATE_CODE"]
           rows = []
           for path in sorted(glob.glob("configs/*_defconfig")):
               # the same preprocessing as scripts/kconfig/Makefile
@@ -115,7 +116,9 @@ jobs:
           print("  ARM64:", count(lambda r: r[3]["ARM64"] == "y"),
                 " private libgcc:",
                 count(lambda r: r[3]["USE_PRIVATE_LIBGCC"] == "y"),
-                " CPU_V7R:", count(lambda r: r[3]["CPU_V7R"] == "y"))
+                " CPU_V7R:", count(lambda r: r[3]["CPU_V7R"] == "y"),
+                " SKIP_RELOCATE_CODE:",
+                count(lambda r: r[3]["SKIP_RELOCATE_CODE"] == "y"))
           print("  SPL:", count(lambda r: r[3]["SPL"] == "y"),
                 " TPL:", count(lambda r: r[3]["TPL"] == "y"),
                 " VPL:", count(lambda r: r[3]["VPL"] == "y"))
@@ -139,15 +142,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # c1 to c3: the base plus the first one, two and three patches
-        variant: [base, base-again, c1, c2, c3, v2, v2-no-gc, base-nolto,
+        # c1 to c4: the base plus the first one to four patches
+        variant: [base, base-again, c1, c2, c3, c4, v2, v2-no-gc, base-nolto,
                   v2-nolto]
         shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.boardlist.outputs.sha }}
-          fetch-depth: 5
+          fetch-depth: 6
 
       - name: Build and record the images
         env:
@@ -159,13 +162,14 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           top=$(git rev-parse HEAD)
           case "$VARIANT" in
-          base|base-again|base-nolto) git checkout --detach "$top~4" ;;
-          c1) git checkout --detach "$top~3" ;;
-          c2) git checkout --detach "$top~2" ;;
-          c3) git checkout --detach "$top~1" ;;
+          base|base-again|base-nolto) git checkout --detach "$top~5" ;;
+          c1) git checkout --detach "$top~4" ;;
+          c2) git checkout --detach "$top~3" ;;
+          c3) git checkout --detach "$top~2" ;;
+          c4) git checkout --detach "$top~1" ;;
           v2|v2-nolto) git checkout --detach "$top" ;;
           v2-no-gc)
-              # the series without patch 3, which keeps --gc-sections
+              # the series without patch 4, which keeps --gc-sections
               git checkout --detach "$top"
               git diff "$top~2" "$top~1" | git apply -R
               ;;
@@ -300,7 +304,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.boardlist.outputs.sha }}
-          fetch-depth: 5
+          fetch-depth: 6
 
       - name: Build a few boards and extract the flags
         run: |
@@ -323,14 +327,15 @@ jobs:
               fi
           fi
           # K3 R5 and A53, AM33xx, i.MX8M, a 32-bit and a 64-bit Renesas
-          # board, Turris Omnia, and the non-LTO MPU board
-          boards=am64x_evm_r5,am64x_evm_a53,am335x_evm,imx8mp_evk,porter,r8a779f0_spider,turris_omnia,xilinx_zynqmp_r5
+          # board, the SKIP_RELOCATE_CODE board, Turris Omnia, and the
+          # non-LTO MPU board
+          boards=am64x_evm_r5,am64x_evm_a53,am335x_evm,imx8mp_evk,porter,r8a779f0_spider,r8a78000_ironhide_cm33,turris_omnia,xilinx_zynqmp_r5
           top=$(git rev-parse HEAD)
           mkdir -p /tmp/res
           for variant in base v2 v2-no-gc; do
               git checkout -f --detach "$top"
               case "$variant" in
-              base) git checkout --detach "$top~4" ;;
+              base) git checkout --detach "$top~5" ;;
               v2-no-gc) git diff "$top~2" "$top~1" | git apply -R ;;
               esac
               # -m: no retry after output on stderr, which would leave an
@@ -398,17 +403,19 @@ jobs:
           python3 - <<'EOF' 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           import collections, glob, json, os, re, sys
 
-          VARIANTS = ["base", "base-again", "c1", "c2", "c3", "v2", "v2-no-gc",
-                      "base-nolto", "v2-nolto"]
+          VARIANTS = ["base", "base-again", "c1", "c2", "c3", "c4", "v2",
+                      "v2-no-gc", "base-nolto", "v2-nolto"]
           lto = set(os.environ["LTO_BOARDS"].split())
           sample = set(os.environ["SAMPLE"].split())
           expected = lto | sample
-          how, arm64 = {}, set()
+          how, arm64, skip = {}, set(), set()
           for line in open("res/boardlist.txt"):
               f = line.split()
               how[f[0]] = f[2][len("how="):]
               if "ARM64=y" in f:
                   arm64.add(f[0])
+              if "SKIP_RELOCATE_CODE=y" in f:
+                  skip.add(f[0])
           recs = collections.defaultdict(dict)
           tops = set()
           for path in glob.glob("res/*.jsonl"):
@@ -449,7 +456,7 @@ jobs:
                   bad.append("%s lacks %s" % (v, " ".join(sorted(absent))))
 
           # build failures that the base does not have
-          for v in ["c1", "c2", "c3", "v2"]:
+          for v in ["c1", "c2", "c3", "c4", "v2"]:
               new = [b for b in recs[v] if not ok(v, b) and ok("base", b)]
               if new:
                   bad.append("%s fails on %s" % (v, " ".join(sorted(new))))
@@ -526,31 +533,54 @@ jobs:
               return same, diff, skipped
 
           report("control: base built twice", "base", "base-again", True)
-          report("patch 1", "base", "c1", False)
+          report("patch 1 changes no image", "base", "c1", True)
           report("patch 2 changes no image", "c1", "c2", True)
           report("patch 3 changes no image", "c2", "c3", True)
-          report("patches 1 to 3", "base", "c3", False)
-          _, diff, _ = report("patch 4", "c3", "v2", False)
+          report("patch 4 changes no image", "c3", "c4", True)
+          report("patches 1 to 4 change no image", "base", "c4", True)
+          _, diff, _ = report("patch 5", "c4", "v2", False)
           for k in ("spl", "tpl", "vpl"):
               if diff[k]:
-                  bad.append("patch 4 changes %s on %s" % (
+                  bad.append("patch 5 changes %s on %s" % (
                       k, " ".join(diff[k])))
           changed = set(diff["proper"])
           moved = sorted(changed & arm64)
-          show("  ARM64 boards whose U-Boot proper patch 4 changes", moved)
+          show("  ARM64 boards whose U-Boot proper patch 5 changes", moved)
           if moved:
-              bad.append("patch 4 changes U-Boot proper of %d ARM64 boards"
+              bad.append("patch 5 changes U-Boot proper of %d ARM64 boards"
                          % len(moved))
-          print("  32-bit LTO boards whose U-Boot proper patch 4 leaves"
+          print("  32-bit LTO boards whose U-Boot proper patch 5 leaves"
                 " alone, per kind:")
           for kind in ["K3", "Renesas", "AM33xx", "CONFIG_LTO=y"]:
               total = [b for b in lto - arm64 if how.get(b) == kind]
-              members = [b for b in total if ok("c3", b) and ok("v2", b)]
+              members = [b for b in total if ok("c4", b) and ok("v2", b)]
               same = sorted(b for b in members if b not in changed)
               print("    %-13s %3d of %3d %s" % (kind, len(same), len(members),
                                                  " ".join(same)))
               if total and (not members or len(same) == len(members)):
-                  bad.append("patch 4 changes no 32-bit %s board" % kind)
+                  bad.append("patch 5 changes no 32-bit %s board" % kind)
+          # the numbers for the cover letter
+          deltas = []
+          for b in sorted(changed & (lto - arm64)):
+              x = int(recs["c4"][b]["proper"].split(":")[1])
+              y = int(recs["v2"][b]["proper"].split(":")[1])
+              deltas.append((y - x, b))
+          deltas.sort()
+          if deltas:
+              print("  32-bit LTO boards that patch 5 changes: %d, u-boot-nodtb.bin"
+                    " change min %d (%s), max %d (%s), larger on %d" % (
+                        len(deltas), deltas[0][0], deltas[0][1], deltas[-1][0],
+                        deltas[-1][1], sum(1 for d, _ in deltas if d > 0)))
+          if any(d > 0 for d, _ in deltas):
+              bad.append("patch 5 makes U-Boot proper larger on %s" % " ".join(
+                  b for d, b in deltas if d > 0))
+          show("  SKIP_RELOCATE_CODE boards", skip)
+          if not skip:
+              bad.append("no SKIP_RELOCATE_CODE board in the board list")
+          if changed & skip:
+              bad.append("patch 5 changes %s" % " ".join(sorted(changed & skip)))
+          report("SKIP_RELOCATE_CODE boards, whole series", "base", "v2", True,
+                 boards=skip)
           report("ARM64 LTO boards, whole series", "base", "v2", True,
                  boards=lto & arm64)
           report("boards without LTO, whole series", "base", "v2", True,
@@ -558,19 +588,19 @@ jobs:
           report("NO_LTO=1, whole series", "base-nolto", "v2-nolto", True)
 
           print()
-          print("without patch 3, which keeps --gc-sections (v2-no-gc vs v2):")
+          print("without patch 4, which keeps --gc-sections (v2-no-gc vs v2):")
           fails = [b for b in recs["v2-no-gc"]
                    if not ok("v2-no-gc", b) and ok("v2", b)]
-          show("  fails only without patch 3", fails)
+          show("  fails only without patch 4", fails)
           priv = {b for b in lto
                   if recs["v2"].get(b, {}).get("cfg", {})
                   .get("USE_PRIVATE_LIBGCC") == "y"}
-          # patch 3 only changes anything with the private libgcc
+          # patch 4 only changes anything with the private libgcc
           odd = sorted(set(fails) - priv)
           if odd:
-              bad.append("without patch 3, boards it cannot affect fail: %s"
+              bad.append("without patch 4, boards it cannot affect fail: %s"
                          % " ".join(odd))
-          report("  boards where patch 3 cannot matter", "v2",
+          report("  boards where patch 4 cannot matter", "v2",
                  "v2-no-gc", True, boards=expected - priv)
           report("  SPL of the private libgcc LTO boards", "v2",
                  "v2-no-gc", True, kinds=("spl", "tpl", "vpl"),
@@ -594,18 +624,18 @@ jobs:
               sizes.append((int(x["proper"].split(":")[1]) -
                             int(y["proper"].split(":")[1]), b))
           print("  private libgcc LTO boards: %d, built both ways: %d, keep"
-                " .discard.addressable without patch 3: %d" % (
+                " .discard.addressable without patch 4: %d" % (
                     len(priv), len(sizes), len(kept)))
           if priv and not sizes:
               bad.append("no private libgcc LTO board builds both with and"
-                         " without patch 3")
+                         " without patch 4")
           if missing:
               show("  do not keep it", missing)
-              bad.append("without patch 3, %d of %d boards keep no"
+              bad.append("without patch 4, %d of %d boards keep no"
                          " .discard.addressable" % (len(missing), len(sizes)))
           if sizes:
               sizes.sort()
-              print("  u-boot-nodtb.bin without patch 3 minus with it:"
+              print("  u-boot-nodtb.bin without patch 4 minus with it:"
                     " min %d (%s), max %d (%s), larger on %d boards" % (
                         sizes[0][0], sizes[0][1], sizes[-1][0], sizes[-1][1],
                         sum(1 for d, _ in sizes if d > 0)))
