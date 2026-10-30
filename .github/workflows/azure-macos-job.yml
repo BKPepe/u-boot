@@ -1,0 +1,38 @@
+# Local testing helper, not for submission upstream.
+#
+# Runs the tools_only_macOS job of .azure-pipelines.yml when a ci-macos-*
+# branch is pushed, so that it can be tested without a pull request to
+# u-boot/u-boot. macos-26-intel is the x64 macOS 26 image, the one that
+# Azure's macOS-26 uses. The build step is taken unchanged from
+# .azure-pipelines.yml of the pushed commit.
+name: azure macos job
+
+on:
+  push:
+    branches:
+      - 'ci-macos-*'
+
+jobs:
+  tools_only_macOS:
+    name: 'Ensure host tools build for macOS X'
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Brew install dependencies
+        run: brew install make ossp-uuid
+
+      - name: Perform tools-only build
+        run: |
+          step=$(awk '
+            /job: tools_only_macOS/ { injob = 1 }
+            injob && /- script: \|/ { inscript = 1; next }
+            inscript && /displayName:/ { exit }
+            inscript { sub(/^          /, ""); print }
+          ' .azure-pipelines.yml)
+          printf '%s\n' "$step"
+          bash --noprofile --norc -c "$step"
+
+      - name: List the tools that tools-only_defconfig leaves out
+        if: always()
+        run: ls -l tools/kwboot tools/gen_ethaddr_crc || true
