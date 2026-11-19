@@ -1,0 +1,118 @@
+# Local testing helper, not for submission upstream.
+#
+# Runs the measurements behind the commit messages and the cover letter of
+# the mpc85xx LTO series with Debian's powerpc-linux-gnu GCC, the toolchain
+# the texts name. The scripts are in .github/powerpc-lto/ next to this file.
+# Like the other workflows here, this file only lives on this fork's master.
+#
+#   turris  Turris 1.x builds at the base and at each of the 14 commits, plus
+#           the kernel.org GCC 14.2.0 that the upstream CI uses
+#   claims  checks of single claims (patches 2, 4, 9 and 11, savedefconfig)
+#   world   all PowerPC boards without LTO (BN base, LN tip, N7 tip without
+#           patch 7) and all mpc85xx boards with LTO (LL tip, L7 tip without
+#           patch 7), each pass over three shards
+#   qemu    test.py on qemu-ppce500: base, tip without and with LTO
+#   gcc12   Debian's GCC 12.2 and make 4.3, SD card SPL link at -j8 with and
+#           without patch 9
+name: powerpc lto audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Series branch: 14 patches on top of their base'
+        required: true
+        default: 'turris1x-lto-v3-wip'
+      base:
+        description: 'Base commit of the series (HEAD~14 of the branch)'
+        required: true
+        default: 'e6fa1282975'
+
+jobs:
+  audit:
+    name: '${{ matrix.job }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    container:
+      image: debian:${{ matrix.debian }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {job: turris, debian: trixie, script: turris-v3.sh}
+          - {job: claims, debian: trixie, script: claims-v3.sh}
+          - {job: qemu, debian: trixie, script: qemu-v3.sh}
+          - {job: gcc12, debian: bookworm, script: gcc12-v3.sh}
+          - {job: world-BN-0, debian: trixie, script: world.sh, passes: BN, shard: 0}
+          - {job: world-BN-1, debian: trixie, script: world.sh, passes: BN, shard: 1}
+          - {job: world-BN-2, debian: trixie, script: world.sh, passes: BN, shard: 2}
+          - {job: world-LN-0, debian: trixie, script: world.sh, passes: LN, shard: 0}
+          - {job: world-LN-1, debian: trixie, script: world.sh, passes: LN, shard: 1}
+          - {job: world-LN-2, debian: trixie, script: world.sh, passes: LN, shard: 2}
+          - {job: world-LL-0, debian: trixie, script: world.sh, passes: LL, shard: 0}
+          - {job: world-LL-1, debian: trixie, script: world.sh, passes: LL, shard: 1}
+          - {job: world-LL-2, debian: trixie, script: world.sh, passes: LL, shard: 2}
+          - {job: world-L7-0, debian: trixie, script: world.sh, passes: L7, shard: 0}
+          - {job: world-L7-1, debian: trixie, script: world.sh, passes: L7, shard: 1}
+          - {job: world-L7-2, debian: trixie, script: world.sh, passes: L7, shard: 2}
+          - {job: world-N7-0, debian: trixie, script: world.sh, passes: N7, shard: 0}
+          - {job: world-N7-1, debian: trixie, script: world.sh, passes: N7, shard: 1}
+          - {job: world-N7-2, debian: trixie, script: world.sh, passes: N7, shard: 2}
+    steps:
+      - name: Install the build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential bc bison flex git ca-certificates file cpio xz-utils \
+            gcc-powerpc-linux-gnu libc6-dev-powerpc-cross \
+            libssl-dev libgnutls28-dev uuid-dev python3 python3-dev python3-setuptools \
+            python3-pip python3-venv python3-pytest python3-yaml python3-jsonschema \
+            python3-pyelftools swig device-tree-compiler
+          if [ "${{ matrix.job }}" = qemu ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              qemu-system-ppc ipxe-qemu
+          fi
+          powerpc-linux-gnu-gcc --version | head -1
+
+      - name: Check out the series
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 20
+          path: src
+
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+          path: ci
+          sparse-checkout: .github/powerpc-lto
+
+      - name: Run ${{ matrix.script }}
+        env:
+          J: '4'
+          TAG: v3
+          PASSES: ${{ matrix.passes }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.passes && '3' || '' }}
+        run: |
+          set -e
+          ln -s "$GITHUB_WORKSPACE/src" /src
+          mkdir -p /out
+          cp ci/.github/powerpc-lto/* /out/
+          bash /out/mkenv.sh ${{ inputs.base }}
+          if [ "${{ matrix.job }}" = qemu ]; then
+            # the hooks the local runs used
+            git clone https://git.u-boot-project.org/u-boot/u-boot-test-hooks.git /hooks
+            git -C /hooks checkout -q 446f09a6476e473c1dfed0b67fda2ac2093351f3
+          fi
+          bash /out/${{ matrix.script }} 2>&1 | tee /out/${{ matrix.job }}.log
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.job }}
+          path: /out
+          if-no-files-found: warn
