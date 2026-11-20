@@ -95,7 +95,7 @@ static int sqfs_calc_n_blks(__le64 start, __le64 end, u64 *offset)
 	start_ = lldiv(le64_to_cpu(start), ctxt.cur_dev->blksz);
 	*offset = le64_to_cpu(start) - (start_ * ctxt.cur_dev->blksz);
 
-	return DIV_ROUND_UP(table_size + *offset, ctxt.cur_dev->blksz);
+	return DIV_ROUND_UP_ULL(table_size + *offset, ctxt.cur_dev->blksz);
 }
 
 /*
@@ -131,7 +131,7 @@ static int sqfs_frag_lookup(u32 inode_fragment_index,
 	n_blks = sqfs_calc_n_blks(sblk->fragment_table_start,
 				  cpu_to_le64(end), &table_offset);
 
-	start /= ctxt.cur_dev->blksz;
+	start = lldiv(start, ctxt.cur_dev->blksz);
 
 	/* Allocate a proper sized buffer to store the fragment index table */
 	if (__builtin_mul_overflow(n_blks, ctxt.cur_dev->blksz, &table_size)) {
@@ -170,7 +170,7 @@ static int sqfs_frag_lookup(u32 inode_fragment_index,
 	start_block = get_unaligned_le64(table + table_offset + block *
 					 sizeof(u64));
 
-	start = start_block / ctxt.cur_dev->blksz;
+	start = lldiv(start_block, ctxt.cur_dev->blksz);
 	n_blks = sqfs_calc_n_blks(cpu_to_le64(start_block),
 				  sblk->fragment_table_start, &table_offset);
 
@@ -792,8 +792,8 @@ static int sqfs_read_inode_table(unsigned char **inode_table, size_t *out_size)
 
 	table_size = get_unaligned_le64(&sblk->directory_table_start) -
 		get_unaligned_le64(&sblk->inode_table_start);
-	start = get_unaligned_le64(&sblk->inode_table_start) /
-		ctxt.cur_dev->blksz;
+	start = lldiv(get_unaligned_le64(&sblk->inode_table_start),
+		      ctxt.cur_dev->blksz);
 	n_blks = sqfs_calc_n_blks(sblk->inode_table_start,
 				  sblk->directory_table_start, &table_offset);
 
@@ -888,8 +888,8 @@ static int sqfs_read_directory_table(unsigned char **dir_table, u32 **pos_list)
 	/* DIRECTORY TABLE */
 	table_size = get_unaligned_le64(&sblk->fragment_table_start) -
 		get_unaligned_le64(&sblk->directory_table_start);
-	start = get_unaligned_le64(&sblk->directory_table_start) /
-		ctxt.cur_dev->blksz;
+	start = lldiv(get_unaligned_le64(&sblk->directory_table_start),
+		      ctxt.cur_dev->blksz);
 	n_blks = sqfs_calc_n_blks(sblk->directory_table_start,
 				  sblk->fragment_table_start, &table_offset);
 
@@ -1603,8 +1603,8 @@ static int sqfs_read_nest(const char *filename, void *buf, loff_t offset,
 		start = lldiv(data_offset, ctxt.cur_dev->blksz);
 		table_size = SQFS_BLOCK_SIZE(finfo.blk_sizes[j]);
 		table_offset = data_offset - (start * ctxt.cur_dev->blksz);
-		n_blks = DIV_ROUND_UP(table_size + table_offset,
-				      ctxt.cur_dev->blksz);
+		n_blks = DIV_ROUND_UP_ULL(table_size + table_offset,
+					  ctxt.cur_dev->blksz);
 
 		/* Don't load any data for sparse blocks */
 		if (finfo.blk_sizes[j] == 0) {
@@ -1677,7 +1677,8 @@ static int sqfs_read_nest(const char *filename, void *buf, loff_t offset,
 	start = lldiv(frag_entry.start, ctxt.cur_dev->blksz);
 	table_size = SQFS_BLOCK_SIZE(frag_entry.size);
 	table_offset = frag_entry.start - (start * ctxt.cur_dev->blksz);
-	n_blks = DIV_ROUND_UP(table_size + table_offset, ctxt.cur_dev->blksz);
+	n_blks = DIV_ROUND_UP_ULL(table_size + table_offset,
+				  ctxt.cur_dev->blksz);
 
 	if (__builtin_mul_overflow(n_blks, ctxt.cur_dev->blksz, &buf_size)) {
 		ret = -EINVAL;
