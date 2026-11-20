@@ -18,7 +18,7 @@ int btrfs_devread(u64 address, int byte_len, void *buf)
 	int byte_offset;
 
 	sector = address >> btrfs_blk_desc->log2blksz;
-	byte_offset = address % btrfs_blk_desc->blksz;
+	byte_offset = address & (btrfs_blk_desc->blksz - 1);
 
 	return fs_devread(btrfs_blk_desc, btrfs_part_info, sector, byte_offset,
 			  byte_len, buf);
