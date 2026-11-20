@@ -1,0 +1,89 @@
+# Local testing helper, not for submission upstream.
+#
+# World build of a series in the container image of the upstream GitLab CI:
+# the boards that its world build covers (all but xtensa), built with
+# buildman at the base and at each patch, over 18 shards, and test.py on
+# sandbox at the base and at the tip, as its "sandbox test.py" job runs it.
+# The scripts are in .github/udiv-world/ next to this file. Like the other
+# workflows here, this file only lives on this fork's master.
+name: udiv world
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Series branch'
+        required: true
+        default: 'udiv-v1-wip'
+      count:
+        description: 'Commits to build: the patches plus their base'
+        required: true
+        default: '5'
+
+jobs:
+  run:
+    name: '${{ matrix.job }}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {job: world-0, script: world.sh, shard: 0}
+          - {job: world-1, script: world.sh, shard: 1}
+          - {job: world-2, script: world.sh, shard: 2}
+          - {job: world-3, script: world.sh, shard: 3}
+          - {job: world-4, script: world.sh, shard: 4}
+          - {job: world-5, script: world.sh, shard: 5}
+          - {job: world-6, script: world.sh, shard: 6}
+          - {job: world-7, script: world.sh, shard: 7}
+          - {job: world-8, script: world.sh, shard: 8}
+          - {job: world-9, script: world.sh, shard: 9}
+          - {job: world-10, script: world.sh, shard: 10}
+          - {job: world-11, script: world.sh, shard: 11}
+          - {job: world-12, script: world.sh, shard: 12}
+          - {job: world-13, script: world.sh, shard: 13}
+          - {job: world-14, script: world.sh, shard: 14}
+          - {job: world-15, script: world.sh, shard: 15}
+          - {job: world-16, script: world.sh, shard: 16}
+          - {job: world-17, script: world.sh, shard: 17}
+          - {job: testpy-base, script: testpy.sh, rev: base}
+          - {job: testpy-tip, script: testpy.sh, rev: tip}
+    steps:
+      - name: Check out the series
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+          path: src
+
+      - name: Check out the scripts
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+          path: ci
+          sparse-checkout: .github/udiv-world
+
+      - name: Run ${{ matrix.script }}
+        env:
+          IMAGE: trini/u-boot-gitlab-ci-runner:noble-20251013-23Jan2026
+          BRANCH: ${{ inputs.branch }}
+          COUNT: ${{ inputs.count }}
+          SHARD: ${{ matrix.shard }}
+          REV: ${{ matrix.rev }}
+        run: |
+          mkdir -p out
+          chmod 777 out
+          df -h /
+          docker run --rm -v "$PWD/src:/src:ro" -v "$PWD/ci/.github/udiv-world:/ci:ro" \
+            -v "$PWD/out:/out" -e BRANCH -e COUNT -e SHARD -e SHARDS=18 -e REV \
+            "$IMAGE" bash /ci/${{ matrix.script }}
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.job }}
+          path: out
+          if-no-files-found: warn
