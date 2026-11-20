@@ -9,6 +9,7 @@
 #include <log.h>
 #include <linux/bitops.h>
 #include <linux/log2.h>
+#include <linux/math64.h>
 #include <malloc.h>
 #include <asm/fsl_pamu.h>
 #include <asm/io.h>
@@ -364,7 +365,7 @@ static uint32_t get_win_cnt(uint64_t size)
 {
 	uint32_t win_cnt = DEFAULT_NUM_SUBWINDOWS;
 
-	while (win_cnt && (size/win_cnt) < PAMU_PAGE_SIZE)
+	while (win_cnt && div_u64(size, win_cnt) < PAMU_PAGE_SIZE)
 		win_cnt >>= 1;
 
 	return win_cnt;
