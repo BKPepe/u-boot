@@ -7,6 +7,7 @@
 
 #include <asm/unaligned.h>
 #include <compiler.h>
+#include <div64.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -122,9 +123,9 @@ int sqfs_inode_size(struct squashfs_base_inode *inode, u32 blk_size, size_t max)
 			return -EINVAL;
 
 		if (fragment == 0xFFFFFFFF)
-			blk_list_size = DIV_ROUND_UP(file_size, blk_size);
+			blk_list_size = DIV_ROUND_UP_ULL(file_size, blk_size);
 		else
-			blk_list_size = file_size / blk_size;
+			blk_list_size = lldiv(file_size, blk_size);
 
 		if (__builtin_mul_overflow(blk_list_size, (unsigned int)sizeof(u32),
 					   &blk_list_size) ||
