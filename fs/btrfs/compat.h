@@ -60,7 +60,7 @@ static inline int __btrfs_devread(struct blk_desc *desc,
 	int ret;
 
 	sector = offset >> desc->log2blksz;
-	byte_offset = offset % desc->blksz;
+	byte_offset = offset & (desc->blksz - 1);
 
 	/* fs_devread() return 0 for error, >0 for success */
 	ret = fs_devread(desc, part, sector, byte_offset, size, buf);
