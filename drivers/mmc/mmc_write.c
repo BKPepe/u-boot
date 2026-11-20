@@ -126,7 +126,7 @@ ulong mmc_berase(struct blk_desc *block_dev, lbaint_t start, lbaint_t blkcnt)
 			blk_r = ((blkcnt - blk) > mmc->erase_grp_size) ?
 				mmc->erase_grp_size : (blkcnt - blk);
 
-			grpcnt = (blkcnt - blk) / mmc->erase_grp_size;
+			grpcnt = div_u64(blkcnt - blk, mmc->erase_grp_size);
 			/* Max 2GB per spec */
 			if ((blkcnt - blk) > 0x400000)
 				blk_r = 0x400000;
