@@ -4,6 +4,7 @@
 #define __BTRFS_VOLUMES_H__
 
 #include <fs_internal.h>
+#include <linux/math64.h>
 #include "ctree.h"
 
 #define BTRFS_STRIPE_LEN	SZ_64K
@@ -138,16 +139,16 @@ static inline u64 calc_stripe_length(u64 type, u64 length, int num_stripes)
 
 	if (type & BTRFS_BLOCK_GROUP_RAID0) {
 		stripe_size = length;
-		stripe_size /= num_stripes;
+		stripe_size = div_u64(stripe_size, num_stripes);
 	} else if (type & BTRFS_BLOCK_GROUP_RAID10) {
 		stripe_size = length * 2;
-		stripe_size /= num_stripes;
+		stripe_size = div_u64(stripe_size, num_stripes);
 	} else if (type & BTRFS_BLOCK_GROUP_RAID5) {
 		stripe_size = length;
-		stripe_size /= (num_stripes - 1);
+		stripe_size = div_u64(stripe_size, num_stripes - 1);
 	} else if (type & BTRFS_BLOCK_GROUP_RAID6) {
 		stripe_size = length;
-		stripe_size /= (num_stripes - 2);
+		stripe_size = div_u64(stripe_size, num_stripes - 2);
 	} else {
 		stripe_size = length;
 	}

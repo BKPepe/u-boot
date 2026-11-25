@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fs_internal.h>
+#include <linux/math64.h>
 #include "ctree.h"
 #include "disk-io.h"
 #include "volumes.h"
@@ -825,17 +826,17 @@ u64 btrfs_stripe_length(struct btrfs_fs_info *fs_info,
 		stripe_len = chunk_len;
 		break;
 	case BTRFS_BLOCK_GROUP_RAID0:
-		stripe_len = chunk_len / num_stripes;
+		stripe_len = div_u64(chunk_len, num_stripes);
 		break;
 	case BTRFS_BLOCK_GROUP_RAID5:
-		stripe_len = chunk_len / (num_stripes - 1);
+		stripe_len = div_u64(chunk_len, num_stripes - 1);
 		break;
 	case BTRFS_BLOCK_GROUP_RAID6:
-		stripe_len = chunk_len / (num_stripes - 2);
+		stripe_len = div_u64(chunk_len, num_stripes - 2);
 		break;
 	case BTRFS_BLOCK_GROUP_RAID10:
-		stripe_len = chunk_len / (num_stripes /
-				btrfs_chunk_sub_stripes(leaf, chunk));
+		stripe_len = div_u64(chunk_len, num_stripes /
+				     btrfs_chunk_sub_stripes(leaf, chunk));
 		break;
 	default:
 		/* Invalid chunk profile found */
@@ -1085,17 +1086,19 @@ again:
 			int rot;
 			u64 tmp;
 			u64 raid56_full_stripe_start;
-			u64 full_stripe_len = nr_data_stripes(map) * map->stripe_len;
+			u32 full_stripe_len = nr_data_stripes(map) * map->stripe_len;
 
 			/*
 			 * align the start of our data stripe in the logical
 			 * address space
 			 */
-			raid56_full_stripe_start = offset / full_stripe_len;
+			raid56_full_stripe_start = div_u64(offset,
+							   full_stripe_len);
 			raid56_full_stripe_start *= full_stripe_len;
 
 			/* get the data stripe number */
-			stripe_nr = raid56_full_stripe_start / map->stripe_len;
+			stripe_nr = div_u64(raid56_full_stripe_start,
+					    map->stripe_len);
 			stripe_nr = stripe_nr / nr_data_stripes(map);
 
 			/* Work out the disk rotation on this stripe-set */
