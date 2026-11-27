@@ -1741,9 +1741,9 @@ MKIMAGEFLAGS_u-boot-dtb.img = $(MKIMAGEFLAGS_u-boot.img)
 # fall back to use the one in the source tree.
 KWD_CONFIG_FILE = $(shell \
 	if [ -f $(objtree)/$(CONFIG_SYS_KWD_CONFIG:"%"=%) ]; then \
-		echo -n $(objtree)/$(CONFIG_SYS_KWD_CONFIG:"%"=%); \
+		echo $(objtree)/$(CONFIG_SYS_KWD_CONFIG:"%"=%); \
 	else \
-		echo -n $(srctree)/$(CONFIG_SYS_KWD_CONFIG:"%"=%); \
+		echo $(srctree)/$(CONFIG_SYS_KWD_CONFIG:"%"=%); \
 	fi)
 
 MKIMAGEFLAGS_u-boot.kwb = -n $(KWD_CONFIG_FILE) \
